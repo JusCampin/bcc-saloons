@@ -287,7 +287,7 @@ AddEventHandler('bcc-brewing:placeProp', function(propName)
     AttachEntityToEntity(PlacingObj, PlayerPedId(), 0, 0.0, 1.0, -0.7, 0.0, 0.0, 0.0, true, false, false, false, false,
         true)
     while placing do
-        Wait(5)
+        Wait(1)
         if prompt == false then
             PromptGroup:ShowGroup('Brewing')
             firstprompt:TogglePrompt(true)
