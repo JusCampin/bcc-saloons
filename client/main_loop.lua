@@ -73,7 +73,7 @@ function StartMainThread()
                                 if v.propname == Config.props.still then
                                     OpenStillMenu(v.id, tonumber(v.stage) or 1, v.currentbrew)
                                 else
-                                    OpenMashMenu(v.id, tonumber(v.stage) or 1, v.currentbrew, tonumber(v.isbrewing) or 0)
+                                    OpenMashMenu(v.id, tonumber(v.stage) or 1, v.currentbrew, tonumber(v.isbrewing) or 0, StageActionTarget and StageActionTarget.brew)
                                 end
                                 openedForTarget = true
                                 StageActionTarget = nil
