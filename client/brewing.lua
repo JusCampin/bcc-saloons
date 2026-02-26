@@ -49,10 +49,10 @@ RegisterNetEvent('bcc-saloons:StartBrewingMash', function(stage, isbrewing, curr
 
         if stage == nil then
             local ferment_ms = 0
-            if Mash and Mash[currentbrew] and Mash[currentbrew][2] and Mash[currentbrew][2].fermenttime then
-                ferment_ms = Mash[currentbrew][2].fermenttime * 60000
-            elseif Mash and Mash[currentbrew] and Mash[currentbrew].fermenttime then
-                ferment_ms = Mash[currentbrew].fermenttime * 60000
+            if Mash and Mash[currentbrew] and Mash[currentbrew][2] and Mash[currentbrew][2].fermentTime then
+                ferment_ms = Mash[currentbrew][2].fermentTime * 60000
+            elseif Mash and Mash[currentbrew] and Mash[currentbrew].fermentTime then
+                ferment_ms = Mash[currentbrew].fermentTime * 60000
             end
             funcs.CallServerAsync('bcc-saloons:SyncSmokeServer', ferment_ms)
         end
