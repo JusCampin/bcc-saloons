@@ -125,7 +125,7 @@ function OpenStillMenu(id, stage, currentbrew)
                 end
 
                 DetailPage:RegisterElement('textdisplay', {
-                    value = locales.t('StillProduced') .. ' ' .. tostring(cfg.yield or 1) .. ' ' .. (cfg.label or ''),
+                    value = locales.t('StillProduced') .. ' ' .. tostring(cfg.yield or 1) .. ' ' .. locales.t('Buckets'),
                     slot = "content",
                     style = { ['font-size'] = '0.90vw', ['color'] = '#BFBFBF' }
                 })
@@ -156,7 +156,7 @@ function OpenStillMenu(id, stage, currentbrew)
                             slot = "content",
                             style = { ['color'] = '#E0E0E0' }
                         }, function()
-                            funcs.CallServerAsync('bcc-saloons:FinishBrewing', id, key, Moonshine)
+                            funcs.CallServerAsync('bcc-saloons:FinishBrewing', id, key)
                         end)
                     end
                 end
