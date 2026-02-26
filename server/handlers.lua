@@ -126,6 +126,9 @@ Core.Callback.Register('bcc-saloons:CheckIngredients', function(source, cb, id, 
         return
     end
 
+    local character = user.getUsedCharacter
+    local starter_id = character and character.charIdentifier or nil
+
     local rowStage = stage
     local rowBrew = currentbrew
     local dbBrew = nil
@@ -247,8 +250,8 @@ Core.Callback.Register('bcc-saloons:CheckIngredients', function(source, cb, id, 
     local end_ms = nil
     if wait_ms > 0 then end_ms = now_ms + wait_ms end
     local oku, _ = funcs.SafeMySQLQuery(
-        "UPDATE brewing SET isbrewing = ?, currentbrew = ?, started_at_ms = ?, stage_end_ms = ? WHERE id = ?",
-        { 1, rowBrew, now_ms, end_ms, id })
+        "UPDATE brewing SET isbrewing = ?, currentbrew = ?, started_at_ms = ?, stage_end_ms = ?, started_by = ? WHERE id = ?",
+        { 1, rowBrew, now_ms, end_ms, starter_id, id })
     -- DB updated for brewing start
     if oku then
         local okr, updated = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
@@ -310,7 +313,36 @@ Core.Callback.Register('bcc-saloons:FinishBrewing', function(source, cb, id, bre
         return
     end
 
-    amount = tonumber(amount)
+    -- Prefer configured yield from recipe to avoid unexpected amounts
+    local configYield = nil
+    if Mash and Mash[brew] then
+        configYield = Mash[brew].yield or Mash[brew].Yield
+    end
+    if Moonshine and Moonshine[brew] then
+        local stageYield = nil
+        -- fetch authoritative row for this prop if available so we can read its stage
+        local row = nil
+        if id then
+            local idx = cache.FindCacheIndex(id)
+            row = idx and cache.StillsCache[idx] or nil
+            if not row then
+                local ok, res = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
+                if ok and res and res[1] then
+                    cache.UpsertCacheRow(res[1])
+                    row = res[1]
+                end
+            end
+        end
+        if row and row.stage and Moonshine[brew][row.stage] then
+            stageYield = Moonshine[brew][row.stage].yield or Moonshine[brew][row.stage].Yield
+        end
+        configYield = stageYield or Moonshine[brew].yield or configYield
+    end
+    if configYield then
+        amount = tonumber(configYield) or 1
+    else
+        amount = tonumber(amount)
+    end
     if not amount or amount <= 0 then
         cb(false)
         return
@@ -369,12 +401,11 @@ Core.Callback.Register('bcc-saloons:FinishBrewing', function(source, cb, id, bre
         return
     end
 
-    if id and Core and Core.Callback and Core.Callback.TriggerAwait then
-        CreateThread(function()
-            pcall(function()
-                Core.Callback.TriggerAwait('bcc-saloons:ChangeStage', id, 0, 0, 'None')
-            end)
+    if id and _G and _G['bcc_saloons_doChangeStage'] then
+        local ok, res = pcall(function()
+            return _G['bcc_saloons_doChangeStage'](0, id, 0, 0, 'None')
         end)
+        if not ok and DBG then DBG:Error('FinishBrewing doChangeStage failed: ' .. tostring(res)) end
     end
     cb(true)
 end)
@@ -429,7 +460,7 @@ _G['bcc_saloons_doChangeStage'] = function(source, id, stage, isbrewing, current
     local ok
     if tonumber(isbrewing) == 0 then
         ok, _ = funcs.SafeMySQLQuery(
-            "UPDATE brewing SET `stage`= ?, currentbrew = ?, isbrewing = ?, started_at_ms = NULL, stage_end_ms = NULL WHERE id = ?",
+            "UPDATE brewing SET `stage`= ?, currentbrew = ?, isbrewing = ?, started_at_ms = NULL, stage_end_ms = NULL, started_by = NULL WHERE id = ?",
             { stage + 1, currentbrew, isbrewing, id })
     else
         ok, _ = funcs.SafeMySQLQuery(
@@ -448,28 +479,7 @@ _G['bcc_saloons_doChangeStage'] = function(source, id, stage, isbrewing, current
         pcall(function()
             TriggerClientEvent('bcc-saloons:SendPropsFromWorld', -1, funcs.ShallowCopyList(updated))
         end)
-        pcall(function()
-            local placed_by = updated[1].placed_by
-            if Config and Config.notify_owner_only and placed_by then
-                local sent = false
-                local players = GetPlayers()
-                for _, pid in ipairs(players) do
-                    local ok_user, candidate = pcall(function() return Core.getUser(tonumber(pid)) end)
-                    if ok_user and candidate and candidate.getUsedCharacter then
-                        local char = candidate.getUsedCharacter
-                        local cid = char and char.charIdentifier
-                        if cid and tostring(cid) == tostring(placed_by) then
-                            pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', tonumber(pid), updated[1].id, updated[1].stage, updated[1].currentbrew) end)
-                            sent = true
-                            break
-                        end
-                    end
-                end
-                if not sent then pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', -1, updated[1].id, updated[1].stage, updated[1].currentbrew) end) end
-            else
-                pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', -1, updated[1].id, updated[1].stage, updated[1].currentbrew) end)
-            end
-        end)
+        -- StageEnded notifications removed (no notifications sent)
         if DBG then DBG:Info('Changed stage for id ' .. tostring(id) .. ' to ' .. tostring(stage)) end
     end
     return true
@@ -531,7 +541,7 @@ Core.Callback.Register('bcc-saloons:StopBrewing', function(source, cb, id)
         return
     end
     local ok, _ = funcs.SafeMySQLQuery(
-    "UPDATE brewing SET `isbrewing`= 0, started_at_ms = NULL, stage_end_ms = NULL WHERE id = ?", { id })
+    "UPDATE brewing SET `isbrewing`= 0, started_at_ms = NULL, stage_end_ms = NULL, started_by = NULL WHERE id = ?", { id })
     if not ok then
         cb(false)
         return
@@ -554,7 +564,7 @@ Core.Callback.Register('bcc-saloons:ResetMash', function(source, cb, id)
         return
     end
     local ok, _ = funcs.SafeMySQLQuery(
-    "UPDATE brewing SET isbrewing = ?, stage = ?, currentbrew = ?, started_at_ms = NULL, stage_end_ms = NULL WHERE id = ?",
+    "UPDATE brewing SET isbrewing = ?, stage = ?, currentbrew = ?, started_at_ms = NULL, stage_end_ms = NULL, started_by = NULL WHERE id = ?",
         { 0, 1, 'None', id })
     if not ok then
         cb(false)
