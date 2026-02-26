@@ -28,6 +28,8 @@ function StartMainThread()
 
             local nearestStillDist2 = math.huge
             local nearestBarrelDist2 = math.huge
+            local nearestStillProp = nil
+            local nearestBarrelProp = nil
             for _, v in pairs(Stills) do
                 if v and v.x and v.y and v.z then
                     local dx = tonumber(v.x) - px
@@ -36,9 +38,11 @@ function StartMainThread()
                     local d2 = dx * dx + dy * dy + dz * dz
                     if v.propname == Config.props.still and d2 < nearestStillDist2 then
                         nearestStillDist2 = d2
+                        nearestStillProp = v
                     end
                     if v.propname == Config.props.barrel and d2 < nearestBarrelDist2 then
                         nearestBarrelDist2 = d2
+                        nearestBarrelProp = v
                     end
                 end
             end
@@ -49,10 +53,59 @@ function StartMainThread()
             if (isNearStill or isNearBarrel) and not Placing then
                 sleep = 0
                 local label = isNearStill and locales.t('Still') or locales.t('Barrel')
-                UiPromptSetActiveGroupThisFrame(BrewGroup, CreateVarString(10, 'LITERAL_STRING', label), 1, 0, 0, 0)
+                -- show countdown next to group label when nearby prop is brewing
+                local nearbyBrewing = false
+                if isNearStill and nearestStillProp and tonumber(nearestStillProp.isbrewing) == 1 then nearbyBrewing = true end
+                if isNearBarrel and nearestBarrelProp and tonumber(nearestBarrelProp.isbrewing) == 1 then nearbyBrewing = true end
+                local labelText = label
+                if nearbyBrewing then
+                    local nearestProp = nil
+                    if nearestStillProp and nearestBarrelProp then
+                        if nearestStillDist2 <= nearestBarrelDist2 then nearestProp = nearestStillProp else nearestProp = nearestBarrelProp end
+                    elseif nearestStillProp then nearestProp = nearestStillProp
+                    elseif nearestBarrelProp then nearestProp = nearestBarrelProp end
+                    if nearestProp and nearestProp.stage_end_ms and type(os) == 'table' and type(os.time) == 'function' then
+                        local remaining = tonumber(nearestProp.stage_end_ms) - (os.time() * 1000)
+                        if remaining < 0 then remaining = 0 end
+                        local totalSecs = math.ceil(remaining / 1000)
+                        local mins = math.floor(totalSecs / 60)
+                        local secs = totalSecs % 60
+                        local timeStr = string.format('%d:%02d', mins, secs)
+                        labelText = labelText .. ' | ' .. timeStr
+                    end
+                end
+                UiPromptSetActiveGroupThisFrame(BrewGroup, CreateVarString(10, 'LITERAL_STRING', labelText), 1, 0, 0, 0)
                 UiPromptSetVisible(BuildPrompt, false)
                 UiPromptSetVisible(DestroyPrompt, true)
+                -- If the nearby prop is currently brewing, show the brew prompt but disable it so players see it
+                -- (nearbyBrewing already computed above)
                 UiPromptSetVisible(BrewPrompt, true)
+                UiPromptSetEnabled(BrewPrompt, not nearbyBrewing)
+                -- Update BrewPrompt text to show countdown when nearby prop is brewing
+                local promptText = locales.t('BrewPrompt')
+                if nearbyBrewing then
+                    -- choose closest prop between still/barrel
+                    local nearestProp = nil
+                    if nearestStillProp and nearestBarrelProp then
+                        if nearestStillDist2 <= nearestBarrelDist2 then nearestProp = nearestStillProp else nearestProp = nearestBarrelProp end
+                    elseif nearestStillProp then nearestProp = nearestStillProp
+                    elseif nearestBarrelProp then nearestProp = nearestBarrelProp end
+                    if nearestProp and type(os) == 'table' and type(os.time) == 'function' then
+                        if nearestProp.stage_end_ms then
+                            local remaining = tonumber(nearestProp.stage_end_ms) - (os.time() * 1000)
+                            if remaining < 0 then remaining = 0 end
+                            local totalSecs = math.ceil(remaining / 1000)
+                            local mins = math.floor(totalSecs / 60)
+                            local secs = totalSecs % 60
+                            local timeStr = string.format('%d:%02d', mins, secs)
+                            promptText = promptText .. ' - ' .. timeStr
+                        else
+                            -- show a brewing indicator when server hasn't provided exact end_ms yet
+                            promptText = promptText .. ' - ' .. locales.t('Brewing')
+                        end
+                    end
+                end
+                UiPromptSetText(BrewPrompt, VarString(10, 'LITERAL_STRING', promptText))
 
                 if Citizen.InvokeNative(0xE0F65F0640EF0617, BrewPrompt) then -- PromptHasHoldModeCompleted
                     Wait(500)
