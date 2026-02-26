@@ -71,10 +71,10 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
 
         DetailPage:RegisterElement('line', { slot = "header", style = {} })
 
-        local last = itemCfg.LastStage or 1
+        local last = itemCfg.lastStage or 1
         for si = 1, last do
             local scfg = (itemCfg[si] or {})
-            local stime = scfg.fermenttime or ''
+            local stime = scfg.fermentTime or ''
             local ingr = scfg.ingredients or {}
             DetailPage:RegisterElement('textdisplay', {
                 value = 'Stage ' .. tostring(si) .. ' - Time: ' .. tostring(stime) .. ' min',
@@ -110,7 +110,7 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
         end
 
         DetailPage:RegisterElement('textdisplay', {
-            value = locales.t('MashProduced') .. ' ' .. tostring(itemCfg.Yield or 1) .. ' ' .. locales.t('Buckets'),
+            value = locales.t('MashProduced') .. ' ' .. tostring(itemCfg.yield or 1) .. ' ' .. (itemCfg.label or ''),
             slot = "content",
             style = {
                 ['font-size'] = '0.90vw',
@@ -129,7 +129,7 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
 
             if currentbrew and currentbrew == item and stage and tonumber(stage) > 1 then
                 local curStage = tonumber(stage)
-                if curStage < (itemCfg.LastStage or last) then
+                if curStage < (itemCfg.lastStage or last) then
                     actionLabel = locales.t('ContinueBrew') .. ' ' .. itemCfg.label
                     actionFunc = function()
                         funcs.CallServerAsync('bcc-saloons:CheckIngredients', id, curStage, item)
