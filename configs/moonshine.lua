@@ -2,8 +2,8 @@
 Moonshine = {
     ['WhiteWhiskey'] = {
         label = 'White Whiskey',
-        Yield = 2,
-        LastStage = 3,     -- highest stage index; used to detect completion and smoke behavior
+        yield = 2,
+        lastStage = 3,     -- highest stage index; used to detect completion and smoke behavior
         [1] = {
             stilltime = 1, -- in minutes
             ingredients = {
@@ -32,8 +32,8 @@ Moonshine = {
 
     ['BlackberryMoonshine'] = {
         label = 'Blackberry Moonshine',
-        Yield = 15,
-        LastStage = 3,
+        yield = 15,
+        lastStage = 3,
         [1] = {
             stilltime = 1, -- in minutes
             ingredients = {
@@ -63,8 +63,8 @@ Moonshine = {
 
     ['ApplePieMoonshine'] = {
         label = 'Apple Moonshine',
-        Yield = 5,
-        LastStage = 3,
+        yield = 5,
+        lastStage = 3,
         [1] = {
             stilltime = 1, -- in minutes
             ingredients = {
