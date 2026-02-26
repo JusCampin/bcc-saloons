@@ -36,4 +36,7 @@ return {
     MashProduced = 'Mash Produced:',
     Buckets = 'bucket(s)',
     Start = 'Start',
+    StartMash = 'Start Mash',
+    StageContinue = 'Stage %s: Continue',
+    CollectMash = 'Collect Mash',
 }
