@@ -64,42 +64,31 @@ RegisterNetEvent("bcc-saloons:SendPropsFromWorld", function(...)
     end
 
     Stills = newStills
-end)
-
--- Stage-ended indicator from server: show contextual tip when a nearby prop's stage completes
-RegisterNetEvent('bcc-saloons:StageEnded', function(propId, newStage, currentbrew)
-    if not propId then return end
-    local px, py, pz = table.unpack(GetEntityCoords(PlayerPedId()))
-    local threshold = math.max(0, tonumber(Config.interactDistance) or 5)
-    for _, v in pairs(Stills or {}) do
-        if v and tostring(v.id) == tostring(propId) and v.x and v.y and v.z then
-            local dx = tonumber(v.x) - px
-            local dy = tonumber(v.y) - py
-            local dz = tonumber(v.z) - pz
-            local d2 = dx*dx + dy*dy + dz*dz
-            if d2 <= (threshold * threshold) then
-                -- Decide which tip to show: collect if past final stage, otherwise continue
-                local tipKey = 'ContinueBrew'
-                if currentbrew and Mash and Mash[currentbrew] and Mash[currentbrew].lastStage then
-                    if tonumber(newStage) and tonumber(newStage) > tonumber(Mash[currentbrew].lastStage) then
-                        tipKey = 'CollectBrew'
-                    end
-                else
-                    -- fallback: show collect if stage is nil or >= 1
-                    if tonumber(newStage) and tonumber(newStage) >= 1 then tipKey = 'CollectBrew' end
+    -- After updating Stills, if a nearby prop exists ensure BrewPrompt visibility/enabled state
+    if BrewPrompt and BrewPrompt ~= 0 then
+        local px, py, pz = table.unpack(GetEntityCoords(PlayerPedId()))
+        local interactDist = tonumber(Config.interactDistance) or 1.5
+        local interactDist2 = interactDist * interactDist
+        local nearest = nil
+        local nearestDist2 = math.huge
+        for _, v in pairs(Stills) do
+            if v and tonumber(v.x) and tonumber(v.y) and tonumber(v.z) then
+                local dx = tonumber(v.x) - px
+                local dy = tonumber(v.y) - py
+                local dz = tonumber(v.z) - pz
+                local d2 = dx * dx + dy * dy + dz * dz
+                if d2 < nearestDist2 then
+                    nearestDist2 = d2
+                    nearest = v
                 end
-                -- Show a short tip and set a transient StageActionTarget so BrewPrompt opens the menu
-                local ok, tip = pcall(function() return locales.t(tipKey) end)
-                if ok and tip then pcall(function() TipBottom(tip, 6000) end) end
-
-                StageActionTarget = {
-                    id = propId,
-                    stage = tonumber(newStage) or nil,
-                    brew = currentbrew,
-                    expires_at = GetGameTimer() + 60000
-                }
-                break
             end
+        end
+        if nearest and nearestDist2 <= interactDist2 then
+            UiPromptSetVisible(BrewPrompt, true)
+            UiPromptSetEnabled(BrewPrompt, (tonumber(nearest.isbrewing) or 0) == 0)
+            if DBG then DBG:Info('SendPropsFromWorld (client): nearest prop id=' .. tostring(nearest.id) .. ' isbrewing=' .. tostring(nearest.isbrewing) .. ' stage_end_ms=' .. tostring(nearest.stage_end_ms)) end
+        else
+            if DBG then DBG:Info('SendPropsFromWorld (client): no nearby prop within interactDist') end
         end
     end
 end)
