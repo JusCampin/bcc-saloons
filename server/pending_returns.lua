@@ -34,6 +34,12 @@ CreateThread(function()
                             end
                         end
                     end
+                    -- optional: return an arbitrary item (e.g., finished brew)
+                    if entry.returnItem and entry.itemName then
+                        local amt = tonumber(entry.amount) or 1
+                        pcall(function() exports.vorp_inventory:addItem(entry.src, entry.itemName, amt) end)
+                        Core.NotifyRightTip(entry.src, locales.t('FinishBrewing'), 4000)
+                    end
                 end)
                 if not ok then
                     if DBG then DBG:Error('PendingReturns worker error: ' .. tostring(err)) end
