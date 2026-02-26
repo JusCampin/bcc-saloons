@@ -113,7 +113,7 @@ Core.Callback.Register('bcc-saloons:SaveToDB', function(source, cb, name, x, y, 
         end
     end
 
-    if DBG then DBG:Success('Saved prop to DB: ' .. tostring(uuid) .. ' by source ' .. tostring(src)) end
+    -- saved
     cb(uuid)
 end)
 
@@ -185,9 +185,7 @@ Core.Callback.Register('bcc-saloons:CheckIngredients', function(source, cb, id, 
         local required = tonumber(ing.qty) or 0
         local okcount, itemCount = pcall(function() return exports.vorp_inventory:getItemCount(src, nil, itemName) end)
         if not okcount then itemCount = nil end
-        if DBG then
-            DBG:Info('Checking ingredient for player ' .. tostring(src) .. ': ' .. tostring(itemName) .. ' required=' .. tostring(required) .. ' have=' .. tostring(itemCount))
-        end
+        -- check ingredients
         if not itemCount or itemCount < required then
             canTake = false
             missingIng = { id = itemName, label = ing.label or itemName, required = required, have = itemCount or 0 }
@@ -223,29 +221,35 @@ Core.Callback.Register('bcc-saloons:CheckIngredients', function(source, cb, id, 
     local wait_ms = 0
     if rowStage ~= nil then
         local nextStage = tonumber(rowStage) + 1
-        if Mash and Mash[rowBrew] then
-            if Mash[rowBrew][nextStage] and Mash[rowBrew][nextStage].fermenttime then
-                wait_ms = Mash[rowBrew][nextStage].fermenttime * 60000
-            elseif Mash[rowBrew].fermenttime then
-                wait_ms = Mash[rowBrew].fermenttime * 60000
-            end
-        end
+                if Mash and Mash[rowBrew] then
+                    if Mash[rowBrew][nextStage] then
+                        local mf = Mash[rowBrew][nextStage].fermenttime or Mash[rowBrew][nextStage].fermentTime
+                        if mf then wait_ms = mf * 60000 end
+                    end
+                    if not wait_ms then
+                        local mf = Mash[rowBrew].fermenttime or Mash[rowBrew].fermentTime
+                        if mf then wait_ms = mf * 60000 end
+                    end
+                end
     else
         if Mash and Mash[rowBrew] then
-            if Mash[rowBrew][2] and Mash[rowBrew][2].fermenttime then
-                wait_ms = Mash[rowBrew][2].fermenttime * 60000
-            elseif Mash[rowBrew].fermenttime then
-                wait_ms = Mash[rowBrew].fermenttime * 60000
+            if Mash[rowBrew][2] then
+                local mf = Mash[rowBrew][2].fermenttime or Mash[rowBrew][2].fermentTime
+                if mf then wait_ms = mf * 60000 end
+            end
+            if not wait_ms then
+                local mf = Mash[rowBrew].fermenttime or Mash[rowBrew].fermentTime
+                if mf then wait_ms = mf * 60000 end
             end
         end
     end
-    if DBG then DBG:Info('CheckIngredients: computed wait_ms=' .. tostring(wait_ms) .. ' for brew=' .. tostring(rowBrew) .. ' id=' .. tostring(id)) end
+    -- computed wait_ms
     local end_ms = nil
     if wait_ms > 0 then end_ms = now_ms + wait_ms end
     local oku, _ = funcs.SafeMySQLQuery(
         "UPDATE brewing SET isbrewing = ?, currentbrew = ?, started_at_ms = ?, stage_end_ms = ? WHERE id = ?",
         { 1, rowBrew, now_ms, end_ms, id })
-    if DBG then DBG:Info('CheckIngredients: updated DB for id=' .. tostring(id) .. ' ok=' .. tostring(oku) .. ' end_ms=' .. tostring(end_ms)) end
+    -- DB updated for brewing start
     if oku then
         local okr, updated = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
         if okr and updated and updated[1] then
@@ -255,20 +259,9 @@ Core.Callback.Register('bcc-saloons:CheckIngredients', function(source, cb, id, 
             end)
         end
     end
-    if id then
-        if DBG then DBG:Info('CheckIngredients: invoking timers.StartPropTimer for id=' .. tostring(id)) end
-        timers.StartPropTimer(id)
-    end
+    if id then timers.StartPropTimer(id) end
 
-    if DBG then DBG:Info('Triggering StartBrewingMash to src ' .. tostring(src) .. ' brew ' .. tostring(rowBrew)) end
-    local ok, err = pcall(function()
-        TriggerClientEvent('bcc-saloons:StartBrewingMash', src, nil, true, rowBrew)
-    end)
-    if not ok then
-        if DBG then DBG:Error('TriggerClientEvent StartBrewingMash failed: ' .. tostring(err)) end
-    else
-        if DBG then DBG:Info('StartBrewingMash TriggerClientEvent executed for src ' .. tostring(src) .. ' brew ' .. tostring(rowBrew)) end
-    end
+    pcall(function() TriggerClientEvent('bcc-saloons:StartBrewingMash', src, nil, true, rowBrew) end)
 
     Core.NotifyRightTip(src, locales.t('TookIngredients'), 4000)
     cb(true)
@@ -283,8 +276,8 @@ Core.Callback.Register('bcc-saloons:FinishBrewing', function(source, cb, id, bre
         return
     end
     local amount
-    if tbl and type(tbl) == 'table' and tbl[brew] and tbl[brew].Yield then
-        amount = tbl[brew].Yield
+    if tbl and type(tbl) == 'table' and tbl[brew] then
+        amount = tbl[brew].Yield or tbl[brew].yield
     else
         if id then
             local idx = cache.FindCacheIndex(id)
@@ -296,13 +289,14 @@ Core.Callback.Register('bcc-saloons:FinishBrewing', function(source, cb, id, bre
                     row = res[1]
                 end
             end
-            if row then
-                if row.stage ~= nil and Moonshine and Moonshine[row.currentbrew] and Moonshine[row.currentbrew][row.stage] and Moonshine[row.currentbrew][row.stage].Yield then
-                    amount = Moonshine[row.currentbrew][row.stage].Yield
-                elseif Mash and Mash[row.currentbrew] and Mash[row.currentbrew].Yield then
-                    amount = Mash[row.currentbrew].Yield
+                if row then
+                    if row.stage ~= nil and Moonshine and Moonshine[row.currentbrew] and Moonshine[row.currentbrew][row.stage] then
+                        amount = Moonshine[row.currentbrew][row.stage].Yield or Moonshine[row.currentbrew][row.stage].yield
+                    end
+                    if not amount and Mash and Mash[row.currentbrew] then
+                        amount = Mash[row.currentbrew].Yield or Mash[row.currentbrew].yield
+                    end
                 end
-            end
         end
     end
 
@@ -322,7 +316,42 @@ Core.Callback.Register('bcc-saloons:FinishBrewing', function(source, cb, id, bre
         return
     end
 
-    local okCanCarry = exports.vorp_inventory:canCarryItem(src, brew, amount)
+    -- determine product/item name to give player
+    local productName = nil
+    if tbl and type(tbl) == 'table' and tbl[brew] and tbl[brew].name then
+        productName = tbl[brew].name
+    else
+        if id then
+            local idx = cache.FindCacheIndex(id)
+            local row = idx and cache.StillsCache[idx] or nil
+            if not row then
+                local ok, res = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
+                if ok and res and res[1] then
+                    cache.UpsertCacheRow(res[1])
+                    row = res[1]
+                end
+            end
+            if row and row.currentbrew then
+                if Mash and Mash[row.currentbrew] and Mash[row.currentbrew].name then
+                    productName = Mash[row.currentbrew].name
+                elseif Moonshine and Moonshine[row.currentbrew] and Moonshine[row.currentbrew].name then
+                    productName = Moonshine[row.currentbrew].name
+                end
+            end
+        end
+        -- fallback: if caller supplied a brew key that maps in configs
+        if not productName then
+            if Mash and Mash[brew] and Mash[brew].name then
+                productName = Mash[brew].name
+            elseif Moonshine and Moonshine[brew] and Moonshine[brew].name then
+                productName = Moonshine[brew].name
+            else
+                productName = brew
+            end
+        end
+    end
+
+    local okCanCarry = exports.vorp_inventory:canCarryItem(src, productName, amount)
     if not okCanCarry then
         Core.NotifyRightTip(src, locales.t('FullItem'), 4000)
         cb(false)
@@ -331,7 +360,7 @@ Core.Callback.Register('bcc-saloons:FinishBrewing', function(source, cb, id, bre
 
     local added = false
     pcall(function()
-        exports.vorp_inventory:addItem(src, brew, amount)
+        exports.vorp_inventory:addItem(src, productName, amount)
         added = true
     end)
 
@@ -367,23 +396,33 @@ end)
 
 Core.Callback.Register('bcc-saloons:ChangeStage', function(source, cb, id, stage, isbrewing, currentbrew)
     local src = source
-    if DBG then
-        local info = ('ChangeStage called with source=%s id=%s stage=%s isbrewing=%s currentbrew=%s'):format(tostring(source), tostring(id), tostring(stage), tostring(isbrewing), tostring(currentbrew))
-        DBG:Info(info)
+    -- ChangeStage wrapper
+    -- delegate to implementation so timers can call it directly
+    local ok, res = pcall(function()
+        return _G['bcc_saloons_doChangeStage'](src, id, stage, isbrewing, currentbrew)
+    end)
+    if not ok then
+        if DBG then DBG:Error('ChangeStage wrapper failed: ' .. tostring(res)) end
+        cb(false)
+        return
     end
+    cb(res)
+end)
+
+-- Implementation of ChangeStage logic callable directly from timers (source may be nil/0)
+_G['bcc_saloons_doChangeStage'] = function(source, id, stage, isbrewing, currentbrew)
+    local src = source
+    -- doChangeStage implementation
     local user = nil
-    -- allow server-side callers (nil/0) to advance stages (timers call this)
     if type(src) == 'number' and src > 0 then
         user = Core.getUser(src)
         if not user then
-            DBG:Error('User not found for source: ' .. tostring(src))
-            cb(false)
-            return
+            if DBG then DBG:Error('User not found for source: ' .. tostring(src)) end
+            return false
         end
     end
     if not id or type(stage) ~= 'number' then
-        cb(false)
-        return
+        return false
     end
     stage = math.max(0, stage)
     currentbrew = currentbrew or 'None'
@@ -398,49 +437,43 @@ Core.Callback.Register('bcc-saloons:ChangeStage', function(source, cb, id, stage
             { stage + 1, currentbrew, isbrewing, id })
     end
     if not ok then
-        cb(false)
-        return
+        return false
     end
     local ok2, updated = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
     if not ok2 then
-        cb(false)
-        return
+        return false
     end
     if updated and updated[1] then
         cache.UpsertCacheRow(updated[1])
         pcall(function()
             TriggerClientEvent('bcc-saloons:SendPropsFromWorld', -1, funcs.ShallowCopyList(updated))
         end)
-            -- Notify clients that a stage has ended for this prop. Config will decide
-            -- whether to show an action indicator based on proximity/ownership.
-            pcall(function()
-                -- Notify either only the owner (if online) or broadcast to all clients based on config
-                local placed_by = updated[1].placed_by
-                if Config and Config.notify_owner_only and placed_by then
-                    local sent = false
-                    local players = GetPlayers()
-                    for _, pid in ipairs(players) do
-                        local ok_user, candidate = pcall(function() return Core.getUser(tonumber(pid)) end)
-                        if ok_user and candidate and candidate.getUsedCharacter then
-                            local char = candidate.getUsedCharacter
-                            local cid = char and char.charIdentifier
-                            if cid and tostring(cid) == tostring(placed_by) then
-                                pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', tonumber(pid), updated[1].id, updated[1].stage, updated[1].currentbrew) end)
-                                sent = true
-                                break
-                            end
+        pcall(function()
+            local placed_by = updated[1].placed_by
+            if Config and Config.notify_owner_only and placed_by then
+                local sent = false
+                local players = GetPlayers()
+                for _, pid in ipairs(players) do
+                    local ok_user, candidate = pcall(function() return Core.getUser(tonumber(pid)) end)
+                    if ok_user and candidate and candidate.getUsedCharacter then
+                        local char = candidate.getUsedCharacter
+                        local cid = char and char.charIdentifier
+                        if cid and tostring(cid) == tostring(placed_by) then
+                            pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', tonumber(pid), updated[1].id, updated[1].stage, updated[1].currentbrew) end)
+                            sent = true
+                            break
                         end
                     end
-                    -- fallback: if owner not found online, broadcast to all so nearby clients still get the tip
-                    if not sent then pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', -1, updated[1].id, updated[1].stage, updated[1].currentbrew) end) end
-                else
-                    pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', -1, updated[1].id, updated[1].stage, updated[1].currentbrew) end)
                 end
-            end)
+                if not sent then pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', -1, updated[1].id, updated[1].stage, updated[1].currentbrew) end) end
+            else
+                pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', -1, updated[1].id, updated[1].stage, updated[1].currentbrew) end)
+            end
+        end)
         if DBG then DBG:Info('Changed stage for id ' .. tostring(id) .. ' to ' .. tostring(stage)) end
     end
-    cb(true)
-end)
+    return true
+end
 
 Core.Callback.Register('bcc-saloons:RemoveFromDb', function(source, cb, id, object, x, y, z)
     local src = source
@@ -471,7 +504,7 @@ Core.Callback.Register('bcc-saloons:RemoveFromDb', function(source, cb, id, obje
     pcall(function()
         TriggerClientEvent('bcc-saloons:DestroyProp', src, object, x, y, z, id)
     end)
-    if DBG then DBG:Info('Removed prop from DB: ' .. tostring(id) .. ' by source ' .. tostring(src)) end
+    -- removed prop
     cb(true)
 
     if Config.returnProps then
@@ -535,7 +568,7 @@ Core.Callback.Register('bcc-saloons:ResetMash', function(source, cb, id)
         end)
     end
     timers.StopPropTimer(id)
-    if DBG then DBG:Info('Reset mash for id ' .. tostring(id) .. ' by source ' .. tostring(src)) end
+    -- reset mash
     cb(true)
 end)
 
@@ -627,9 +660,7 @@ Core.Callback.Register('bcc-saloons:GetCoords', function(source, cb, x, y, z)
         cb(false)
         return
     end
-    if DBG then
-        DBG:Info(('GetCoords called by %s at %s,%s,%s - cache size %d'):format(tostring(src), tostring(nx), tostring(ny), tostring(nz), #cache.StillsCache))
-    end
+    -- GetCoords called
     local nearby = {}
     local maxdist = math.max(0, tonumber(Config.interactDistance) or 5)
     local maxdist2 = maxdist * maxdist
@@ -647,7 +678,7 @@ Core.Callback.Register('bcc-saloons:GetCoords', function(source, cb, x, y, z)
             end
         end
     end
-    if DBG then DBG:Info(('GetCoords result: found %d nearby (maxdist %s)'):format(#nearby, tostring(maxdist))) end
+    -- returning nearby props
     cb(nearby)
 end)
 
@@ -663,77 +694,6 @@ Core.Callback.Register('bcc-saloons:ReloadCache', function(source, cb)
     cb(ok)
 end)
 
--- Dev: console-only fast-forward command to trigger stage change for testing
-RegisterCommand('bcc-saloons-fastforward', function(source, args, raw)
-    -- allow players to run this in dev mode; otherwise require console (source 0)
-    if tonumber(source) ~= 0 and not (Config and Config.devMode and Config.devMode.active) then
-        if DBG then DBG:Info('bcc-saloons-fastforward: console-only command (or enable Config.devMode.active)') else print('bcc-saloons-fastforward: console-only command') end
-        return
-    end
-    if DBG then DBG:Info(('bcc-saloons-fastforward invoked by source=%s args=%s'):format(tostring(source), tostring(args and args[1] or 'nil'))) end
-    local id = args and args[1]
-    if not id then
-        if DBG then DBG:Info('Usage: bcc-saloons-fastforward <id>') else print('Usage: bcc-saloons-fastforward <id>') end
-        return
-    end
-    local idx = cache.FindCacheIndex(id)
-    local row = idx and cache.StillsCache[idx] or nil
-    if not row then
-        local ok, res = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
-        if ok and res and res[1] then
-            cache.UpsertCacheRow(res[1])
-            row = res[1]
-        end
-    end
-    if not row then
-        if DBG then DBG:Info('bcc-saloons-fastforward: prop not found: ' .. tostring(id)) else print('bcc-saloons-fastforward: prop not found: ' .. tostring(id)) end
-        return
-    end
-    local curStage = tonumber(row.stage) or 0
-    -- Dev-only: perform the ChangeStage DB update and client notify directly for testing
-    do
-        local stage = math.max(0, curStage)
-        local newStage = stage + 1
-        local oku, _ = funcs.SafeMySQLQuery(
-            "UPDATE brewing SET `stage`= ?, currentbrew = ?, isbrewing = ?, started_at_ms = NULL, stage_end_ms = NULL WHERE id = ?",
-            { newStage, row.currentbrew or 'None', 0, id })
-        if not oku then
-            if DBG then DBG:Error('bcc-saloons-fastforward: DB update failed for id ' .. tostring(id)) end
-            return
-        end
-        local ok2, updated = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
-        if ok2 and updated and updated[1] then
-            cache.UpsertCacheRow(updated[1])
-            pcall(function()
-                TriggerClientEvent('bcc-saloons:SendPropsFromWorld', -1, funcs.ShallowCopyList(updated))
-            end)
-            pcall(function()
-                local placed_by = updated[1].placed_by
-                if Config and Config.notify_owner_only and placed_by then
-                    local sent = false
-                    local players = GetPlayers()
-                    for _, pid in ipairs(players) do
-                        local ok_user, candidate = pcall(function() return Core.getUser(tonumber(pid)) end)
-                        if ok_user and candidate and candidate.getUsedCharacter then
-                            local char = candidate.getUsedCharacter
-                            local cid = char and char.charIdentifier
-                            if cid and tostring(cid) == tostring(placed_by) then
-                                pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', tonumber(pid), updated[1].id, updated[1].stage, updated[1].currentbrew) end)
-                                sent = true
-                                break
-                            end
-                        end
-                    end
-                    if not sent then pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', -1, updated[1].id, updated[1].stage, updated[1].currentbrew) end) end
-                else
-                    pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', -1, updated[1].id, updated[1].stage, updated[1].currentbrew) end)
-                end
-            end)
-            if DBG then DBG:Info('bcc-saloons-fastforward: advanced stage for id ' .. tostring(id) .. ' to ' .. tostring(newStage)) end
-        else
-            if DBG then DBG:Error('bcc-saloons-fastforward: failed to SELECT updated row for id ' .. tostring(id)) end
-        end
-    end
-end, false)
+-- Dev fast-forward command removed (use timers or tests). To re-enable, restore a development helper here.
 
 return {}
