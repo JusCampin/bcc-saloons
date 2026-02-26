@@ -36,9 +36,5 @@ Config = {
         'marshal'
     },
     -----------------------------------------------------
-    -- Notification control: when a stage ends, control whether only the owner
-    -- who placed the prop receives the notification, or all nearby clients.
-    -- true = notify only owner (if online); false = notify all clients (clients filter by proximity)
-    notify_owner_only = false,
     -----------------------------------------------------
 }
