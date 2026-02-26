@@ -110,7 +110,7 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
         end
 
         DetailPage:RegisterElement('textdisplay', {
-            value = locales.t('MashProduced') .. ' ' .. tostring(itemCfg.yield or 1) .. ' ' .. (itemCfg.label or ''),
+            value = locales.t('MashProduced') .. ' ' .. tostring(itemCfg.yield or 1) .. ' ' .. locales.t('Buckets'),
             slot = "content",
             style = {
                 ['font-size'] = '0.90vw',
@@ -122,22 +122,24 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
         -- Dynamic action button: Start / Continue / Collect
         do
             local disabled = (tonumber(isbrewing) or 0) == 1
-            local actionLabel = locales.t('Start') .. ' ' .. itemCfg.label
+            local actionLabel = locales.t('StartMash')
             local actionFunc = function()
                 funcs.CallServerAsync('bcc-saloons:CheckIngredients', id, nil, item)
             end
 
-            if currentbrew and currentbrew == item and stage and tonumber(stage) > 1 then
+            if currentbrew and currentbrew == item and stage and tonumber(stage) >= 1 then
                 local curStage = tonumber(stage)
-                if curStage < (itemCfg.lastStage or last) then
-                    actionLabel = locales.t('ContinueBrew') .. ' ' .. itemCfg.label
+                local lastStage = itemCfg.lastStage or last
+                if curStage >= 1 and curStage <= lastStage then
+                    local fmt = locales.t('StageContinue') or 'Stage %s Continue'
+                    actionLabel = string.format(fmt, tostring(curStage))
                     actionFunc = function()
                         funcs.CallServerAsync('bcc-saloons:CheckIngredients', id, curStage, item)
                     end
-                else
-                    actionLabel = locales.t('CollectBrew') .. ' ' .. itemCfg.label
+                elseif curStage > lastStage then
+                    actionLabel = locales.t('CollectMash')
                     actionFunc = function()
-                        funcs.CallServerAsync('bcc-saloons:FinishBrewing', id, item, Mash)
+                        funcs.CallServerAsync('bcc-saloons:FinishBrewing', id, item)
                     end
                 end
             end
@@ -184,11 +186,6 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
         }, function()
             SaloonsMashMenu:Close()
         end)
-
-        -- show contextual tip if this mash is between stages and not currently brewing
-        if id and currentbrew and currentbrew == item and tonumber(stage) and tonumber(stage) > 1 and tonumber(isbrewing) == 0 then
-            pcall(function() TipBottom(locales.t('ContinueBrew'), 4000) end)
-        end
 
         SaloonsMashMenu:Open({ startupPage = DetailPage })
     end
