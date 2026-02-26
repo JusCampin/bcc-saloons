@@ -80,8 +80,8 @@ RegisterNetEvent('bcc-saloons:StageEnded', function(propId, newStage, currentbre
             if d2 <= (threshold * threshold) then
                 -- Decide which tip to show: collect if past final stage, otherwise continue
                 local tipKey = 'ContinueBrew'
-                if currentbrew and Mash and Mash[currentbrew] and Mash[currentbrew].LastStage then
-                    if tonumber(newStage) and tonumber(newStage) > tonumber(Mash[currentbrew].LastStage) then
+                if currentbrew and Mash and Mash[currentbrew] and Mash[currentbrew].lastStage then
+                    if tonumber(newStage) and tonumber(newStage) > tonumber(Mash[currentbrew].lastStage) then
                         tipKey = 'CollectBrew'
                     end
                 else
