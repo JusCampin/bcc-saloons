@@ -91,13 +91,24 @@ local function StartPropTimer(id)
                     end
                 elseif Mash and Mash[r.currentbrew] then
                     local nextStage = curStage + 1
-                    if Mash[r.currentbrew][nextStage] and Mash[r.currentbrew][nextStage].fermentTime then
+                    local lastStage = Mash[r.currentbrew].lastStage or nil
+                    -- Prefer fermentTime defined for the current stage (time to complete this stage)
+                    if Mash[r.currentbrew][curStage] and Mash[r.currentbrew][curStage].fermentTime then
+                        wait_ms = Mash[r.currentbrew][curStage].fermentTime * 60000
+                    -- Backwards-compatible: some configs may put fermentTime on the next stage
+                    elseif Mash[r.currentbrew][nextStage] and Mash[r.currentbrew][nextStage].fermentTime then
                         wait_ms = Mash[r.currentbrew][nextStage].fermentTime * 60000
                     elseif Mash[r.currentbrew].fermentTime then
                         wait_ms = Mash[r.currentbrew].fermentTime * 60000
                     else
-                        if DBG then DBG:Info('Timer exit: Mash entry missing fermentTime for ' .. tostring(r.currentbrew) .. ' nextStage ' .. tostring(nextStage)) end
-                        break
+                        -- If we're at or beyond last stage, advance immediately to allow collection
+                        if lastStage and curStage >= lastStage then
+                            if DBG then DBG:Info('Timer: at/after lastStage for ' .. tostring(r.currentbrew) .. ' curStage ' .. tostring(curStage) .. '; advancing immediately') end
+                            wait_ms = 1
+                        else
+                            if DBG then DBG:Info('Timer exit: Mash entry missing fermentTime for ' .. tostring(r.currentbrew) .. ' curStage ' .. tostring(curStage)) end
+                            break
+                        end
                     end
                 else
                     if DBG then DBG:Info('Timer exit: No recipe found for currentbrew=' .. tostring(r.currentbrew)) end
@@ -110,7 +121,12 @@ local function StartPropTimer(id)
                         funcs.SafeMySQLQuery("UPDATE brewing SET stage_end_ms = ? WHERE id = ?", { end_ms, id })
                     end)
                     local okr, updated = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
-                    if okr and updated and updated[1] then cache.UpsertCacheRow(updated[1]) end
+                    if okr and updated and updated[1] then
+                        cache.UpsertCacheRow(updated[1])
+                        pcall(function()
+                            TriggerClientEvent('bcc-saloons:SendPropsFromWorld', -1, funcs.ShallowCopyList(updated))
+                        end)
+                    end
                 end
                 -- recompute now_ms/wait_ms if end_ms was just set
                 now_ms = math.floor(os.time() * 1000)
@@ -149,8 +165,22 @@ local function StartPropTimer(id)
 
             -- invoke the direct ChangeStage implementation; log errors only
             if DBG then DBG:Info('Timer for prop ' .. tostring(id) .. ' elapsed; invoking doChangeStage curStage=' .. tostring(curStage)) end
+            -- For Mash recipes we want to stop between stages and require player interaction to continue.
+            -- For Moonshine (or other recipes) preserve previous behavior where the timer may continue automatically.
+            local nextStage = curStage + 1
+            local isbrewingArg = 1
+            if Mash and Mash[r.currentbrew] then
+                -- always stop after completing the current mash stage
+                isbrewingArg = 0
+            else
+                local continueBrewing = true
+                if Moonshine and Moonshine[r.currentbrew] and Moonshine[r.currentbrew].lastStage then
+                    if nextStage > Moonshine[r.currentbrew].lastStage then continueBrewing = false end
+                end
+                isbrewingArg = continueBrewing and 1 or 0
+            end
             local okInvoke, invokeRes = pcall(function()
-                return _G['bcc_saloons_doChangeStage'](0, id, curStage, 0, r.currentbrew)
+                return _G['bcc_saloons_doChangeStage'](0, id, curStage, isbrewingArg, r.currentbrew)
             end)
             if not okInvoke then
                 if DBG then DBG:Error('Timer doChangeStage failed for id ' .. tostring(id) .. ' err=' .. tostring(invokeRes)) end
