@@ -77,10 +77,10 @@ function OpenStillMenu(id, stage, currentbrew)
 
                 DetailPage:RegisterElement('line', { slot = "header", style = {} })
 
-                local last = cfg.LastStage or (#cfg)
+                local last = cfg.lastStage or (#cfg)
                 for si = 1, last do
                     local scfg = cfg[si] or {}
-                    local stime = scfg.stilltime or scfg.fermenttime or ''
+                    local stime = scfg.stilltime or scfg.fermentTime or ''
                     DetailPage:RegisterElement('textdisplay', {
                         value = 'Stage ' .. tostring(si) .. ' - Time: ' .. tostring(stime) .. ' min',
                         slot = "content",
@@ -125,7 +125,7 @@ function OpenStillMenu(id, stage, currentbrew)
                 end
 
                 DetailPage:RegisterElement('textdisplay', {
-                    value = locales.t('StillProduced') and (locales.t('StillProduced') .. ' ' .. tostring(cfg.Yield or 1)) or '',
+                    value = locales.t('StillProduced') .. ' ' .. tostring(cfg.yield or 1) .. ' ' .. (cfg.label or ''),
                     slot = "content",
                     style = { ['font-size'] = '0.90vw', ['color'] = '#BFBFBF' }
                 })
@@ -142,7 +142,7 @@ function OpenStillMenu(id, stage, currentbrew)
                 -- Continue/Collect depending on current stage
                 if currentbrew and currentbrew == key and stage and tonumber(stage) > 1 then
                     local curStage = tonumber(stage)
-                    if curStage < (cfg.LastStage or last) then
+                    if curStage < (cfg.lastStage or last) then
                         DetailPage:RegisterElement('button', {
                             label = locales.t('ContinueBrew') .. ' ' .. (cfg.label or key),
                             slot = "content",
