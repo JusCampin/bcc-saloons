@@ -48,4 +48,23 @@ SET @stmt = IF(@col_exists = 0,
   'SELECT "column batch_amount already exists"');
 PREPARE ps FROM @stmt; EXECUTE ps; DEALLOCATE PREPARE ps;
 
--- End of migration.
+-- Add `started_by` (who started the current brew; optional, char identifier)
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+ WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'brewing' AND COLUMN_NAME = 'started_by');
+SET @stmt = IF(@col_exists = 0,
+  'ALTER TABLE `brewing` ADD COLUMN `started_by` VARCHAR(64) NULL;',
+  'SELECT "column started_by already exists"');
+PREPARE ps FROM @stmt; EXECUTE ps; DEALLOCATE PREPARE ps;
+
+INSERT INTO `items`(`item`, `label`, `limit`, `can_remove`, `type`, `usable`, `desc`)
+VALUES
+  ('corn_mash', 'Corn Mash', 10, 1, 'item_standard', 1, 'A batch of corn mash, ready for distillation.'),
+  ('fruit_mash', 'Fruit Mash', 10, 1, 'item_standard', 1, 'A batch of fruit mash, ready for distillation.'),
+  ('sweetened_mash', 'Sweetened Mash', 10, 1, 'item_standard', 1, 'A batch of sweetened mash, ready for distillation.')
+ON DUPLICATE KEY UPDATE
+  `label`=VALUES(`label`),
+  `limit`=VALUES(`limit`),
+  `can_remove`=VALUES(`can_remove`),
+  `type`=VALUES(`type`),
+  `usable`=VALUES(`usable`),
+  `desc`=VALUES(`desc`);
