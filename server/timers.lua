@@ -57,7 +57,7 @@ local function StartPropTimer(id)
             -- refresh authoritative row
             local ridx = cache.FindCacheIndex(id)
             local r = ridx and cache.StillsCache[ridx] or nil
-            if DBG then DBG:Info('Timer loop: FindCacheIndex(' .. tostring(id) .. ') -> ' .. tostring(ridx)) end
+            -- minimal logging to reduce verbosity
             if not r then
                 local ok, res = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
                 if ok and res and res[1] then
@@ -80,7 +80,6 @@ local function StartPropTimer(id)
             local wait_ms = nil
             if end_ms and end_ms > now_ms then
                 wait_ms = end_ms - now_ms
-                if DBG then DBG:Info('Timer for prop ' .. tostring(id) .. ' using persisted end_ms=' .. tostring(end_ms) .. ' wait_ms=' .. tostring(wait_ms) .. ' brew=' .. tostring(r.currentbrew)) end
             else
                 -- compute expected wait from recipe and persist end_ms
                 if Moonshine and Moonshine[r.currentbrew] and Moonshine[r.currentbrew][curStage] then
@@ -92,12 +91,12 @@ local function StartPropTimer(id)
                     end
                 elseif Mash and Mash[r.currentbrew] then
                     local nextStage = curStage + 1
-                    if Mash[r.currentbrew][nextStage] and Mash[r.currentbrew][nextStage].fermenttime then
-                        wait_ms = Mash[r.currentbrew][nextStage].fermenttime * 60000
-                    elseif Mash[r.currentbrew].fermenttime then
-                        wait_ms = Mash[r.currentbrew].fermenttime * 60000
+                    if Mash[r.currentbrew][nextStage] and Mash[r.currentbrew][nextStage].fermentTime then
+                        wait_ms = Mash[r.currentbrew][nextStage].fermentTime * 60000
+                    elseif Mash[r.currentbrew].fermentTime then
+                        wait_ms = Mash[r.currentbrew].fermentTime * 60000
                     else
-                        if DBG then DBG:Info('Timer exit: Mash entry missing fermenttime for ' .. tostring(r.currentbrew) .. ' nextStage ' .. tostring(nextStage)) end
+                        if DBG then DBG:Info('Timer exit: Mash entry missing fermentTime for ' .. tostring(r.currentbrew) .. ' nextStage ' .. tostring(nextStage)) end
                         break
                     end
                 else
@@ -148,87 +147,13 @@ local function StartPropTimer(id)
             end
             if timer.cancel then break end
 
-            if DBG then DBG:Info('Timer for prop ' .. tostring(id) .. ' elapsed; invoking ChangeStage (non-blocking) curStage=' .. tostring(curStage) .. ' currentbrew=' .. tostring(r.currentbrew)) end
-            local calledOk, calledRes = false, nil
-            local completed = false
-            CreateThread(function()
-                local okc, resc = pcall(function()
-                    return Core.Callback.TriggerAwait('bcc-saloons:ChangeStage', id, curStage, 0, r.currentbrew)
-                end)
-                calledOk, calledRes = okc, resc
-                completed = true
+            -- invoke the direct ChangeStage implementation; log errors only
+            if DBG then DBG:Info('Timer for prop ' .. tostring(id) .. ' elapsed; invoking doChangeStage curStage=' .. tostring(curStage)) end
+            local okInvoke, invokeRes = pcall(function()
+                return _G['bcc_saloons_doChangeStage'](0, id, curStage, 0, r.currentbrew)
             end)
-            -- wait for callback to complete but with timeout to avoid blocking thread
-            local waited = 0
-            local timeout_ms = 5000
-            while not completed and waited < timeout_ms do
-                Wait(100)
-                waited = waited + 100
-            end
-            if not completed then
-                if DBG then DBG:Error('Timer ChangeStage call timed out for id ' .. tostring(id) .. ' after ' .. tostring(timeout_ms) .. 'ms') end
-            else
-                if DBG then DBG:Info('Timer ChangeStage call finished for id ' .. tostring(id) .. ' ok=' .. tostring(calledOk) .. ' res=' .. tostring(calledRes)) end
-            end
-            -- After attempting ChangeStage, verify DB row actually advanced; if not, perform fallback update
-            local ok2, updated = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
-            if not ok2 or not updated or not updated[1] then
-                if DBG then DBG:Error('Timer verify: failed to read updated row for id ' .. tostring(id)) end
-            else
-                local newStage = tonumber(updated[1].stage) or 0
-                local db_isbrewing = tonumber(updated[1].isbrewing) or 0
-                local db_brew = tostring(updated[1].currentbrew)
-                if DBG then DBG:Info(('Timer verify: db row for id %s => stage=%s isbrewing=%s currentbrew=%s stage_end_ms=%s'):format(tostring(id), tostring(newStage), tostring(db_isbrewing), tostring(db_brew), tostring(updated[1].stage_end_ms))) end
-                if newStage <= (tonumber(curStage) or 0) then
-                    if DBG then DBG:Info('Timer verify: stage did not advance (cur=' .. tostring(curStage) .. ' db=' .. tostring(newStage) .. '), applying fallback update for id ' .. tostring(id)) end
-                    -- Fallback: perform DB update and notify clients directly (mirror ChangeStage behavior)
-                    local stageNext = math.max(0, curStage) + 1
-                    local isbrewing_flag = 0
-                    local currentbrew = r.currentbrew or 'None'
-                    local sqlok, _ = pcall(function()
-                        funcs.SafeMySQLQuery(
-                            "UPDATE brewing SET `stage`= ?, currentbrew = ?, isbrewing = ?, started_at_ms = NULL, stage_end_ms = NULL WHERE id = ?",
-                            { stageNext, currentbrew, isbrewing_flag, id }
-                        )
-                    end)
-                    if not sqlok then
-                        if DBG then DBG:Error('Timer fallback DB update failed for id ' .. tostring(id)) end
-                    else
-                        local ok3, updated2 = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
-                        if ok3 and updated2 and updated2[1] then
-                            cache.UpsertCacheRow(updated2[1])
-                            pcall(function()
-                                TriggerClientEvent('bcc-saloons:SendPropsFromWorld', -1, funcs.ShallowCopyList(updated2))
-                            end)
-                            -- notify clients about stage end (owner-only config respected)
-                            pcall(function()
-                                local placed_by = updated2[1].placed_by
-                                if Config and Config.notify_owner_only and placed_by then
-                                    local sent = false
-                                    local players = GetPlayers()
-                                    for _, pid in ipairs(players) do
-                                        local ok_user, candidate = pcall(function() return Core.getUser(tonumber(pid)) end)
-                                        if ok_user and candidate and candidate.getUsedCharacter then
-                                            local char = candidate.getUsedCharacter
-                                            local cid = char and char.charIdentifier
-                                            if cid and tostring(cid) == tostring(placed_by) then
-                                                pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', tonumber(pid), updated2[1].id, updated2[1].stage, updated2[1].currentbrew) end)
-                                                sent = true
-                                                break
-                                            end
-                                        end
-                                    end
-                                    if not sent then pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', -1, updated2[1].id, updated2[1].stage, updated2[1].currentbrew) end) end
-                                else
-                                    pcall(function() TriggerClientEvent('bcc-saloons:StageEnded', -1, updated2[1].id, updated2[1].stage, updated2[1].currentbrew) end)
-                                end
-                            end)
-                            if DBG then DBG:Info('Timer fallback advanced stage for id ' .. tostring(id) .. ' to ' .. tostring(stageNext)) end
-                        end
-                    end
-                else
-                    if DBG then DBG:Info('Timer verify: stage advanced in DB to ' .. tostring(newStage) .. ' for id ' .. tostring(id)) end
-                end
+            if not okInvoke then
+                if DBG then DBG:Error('Timer doChangeStage failed for id ' .. tostring(id) .. ' err=' .. tostring(invokeRes)) end
             end
         end
         ActiveTimers[id] = nil
