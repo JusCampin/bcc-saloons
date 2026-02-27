@@ -126,6 +126,11 @@ local function StartPropTimer(id)
                         pcall(function()
                             TriggerClientEvent('bcc-saloons:SendPropsFromWorld', -1, funcs.ShallowCopyList(updated))
                         end)
+                        -- also send a tick-synced end timestamp so clients can compute a precise local countdown
+                        local server_now_ms = math.floor(os.time() * 1000)
+                        pcall(function()
+                            TriggerClientEvent('bcc-saloons:StageEndTick', -1, id, end_ms, server_now_ms)
+                        end)
                     end
                 end
                 -- recompute now_ms/wait_ms if end_ms was just set
