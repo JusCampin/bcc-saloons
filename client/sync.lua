@@ -97,6 +97,24 @@ RegisterNetEvent('bcc-saloons:GetPropData', function(propdata)
     ActiveProps = propdata
 end)
 
+-- Receive a tick-synced end timestamp from server and compute a local GetGameTimer() endTick
+RegisterNetEvent('bcc-saloons:StageEndTick', function(id, end_ms, server_now_ms)
+    if not id or not end_ms or not server_now_ms then return end
+    if not Stills then return end
+    local ok, now = pcall(function() return GetGameTimer() end)
+    if not ok or not now then return end
+    local delta = tonumber(end_ms) - tonumber(server_now_ms)
+    if not delta then return end
+    local endTick = now + delta
+    for _, v in pairs(Stills) do
+        if v and tostring(v.id) == tostring(id) then
+            v._endTick = endTick
+            if DBG then DBG:Info(('StageEndTick received: id=%s end_ms=%s server_now_ms=%s endTick=%s'):format(tostring(id), tostring(end_ms), tostring(server_now_ms), tostring(endTick))) end
+            break
+        end
+    end
+end)
+
 RegisterNetEvent('bcc-saloons:sync', function()
     local ok, result = funcs.CallServerAwait('bcc-saloons:GetProps', 3000)
     if ok and result then
@@ -126,7 +144,7 @@ RegisterNetEvent('bcc-saloons:DestroyProp', function(object, x, y, z, propId)
     local animDict = pedIsMale and 'amb_work@world_human_crouch_inspect@male_c@idle_d' or 'amb_work@world_human_crouch_inspect@female_a@idle_a'
     local animName = pedIsMale and 'idle_k' or 'idle_a'
     local time = (Config.timeToDestroy * 1000) or 10000
-    funcs.PlayAnim(animDict, animName, time, true)
+    funcs.PlayAnim(animDict, animName, time, true, nil)
 
     if prop and DoesEntityExist(prop) then
         DeleteObject(prop)
