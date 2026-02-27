@@ -37,15 +37,21 @@ end)
 RegisterNetEvent('bcc-saloons:StartBrewingMash', function(stage, isbrewing, currentbrew)
     DBG:Info('Received StartBrewingMash event: stage=' .. tostring(stage) .. ' isbrewing=' .. tostring(isbrewing) .. ' brew=' .. tostring(currentbrew))
     if isbrewing then
-        local playerPed = PlayerPedId()
-        RequestAnimDict("script_re@moonshine_camp@player_put_in_herbs")
-        while (not HasAnimDictLoaded("script_re@moonshine_camp@player_put_in_herbs")) do
-            Wait(100)
-        end
-        Citizen.InvokeNative(0xEA47FE3719165B94, playerPed, "script_re@moonshine_camp@player_put_in_herbs", "put_in_still", 8.0, -8.0, -1, 31, 0,
-            true, 0, false, 0, false)
-        Wait(4000)
-        ClearPedSecondaryTask(playerPed)
+        local animDict = "script_re@moonshine_camp@player_put_in_herbs"
+        local animName = "put_in_still"
+        funcs.PlayAnim(animDict, animName, 4000, false, 31)
+        -- clear the keep-kneeling flag so menu closes behave normally
+        TriggerEvent('bcc-saloons:ClearKeepKneeling')
+        -- notify UI to close mash menu now that brewing is starting
+        TriggerEvent('bcc-saloons:CloseMashMenu')
+        -- RequestAnimDict("script_re@moonshine_camp@player_put_in_herbs")
+        -- while (not HasAnimDictLoaded("script_re@moonshine_camp@player_put_in_herbs")) do
+        --     Wait(100)
+        -- end
+        -- Citizen.InvokeNative(0xEA47FE3719165B94, playerPed, "script_re@moonshine_camp@player_put_in_herbs", "put_in_still", 8.0, -8.0, -1, 31, 0,
+        --     true, 0, false, 0, false)
+        -- Wait(4000)
+        -- ClearPedSecondaryTask(playerPed)
 
         if stage == nil then
             local ferment_ms = 0
