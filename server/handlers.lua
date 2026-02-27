@@ -178,31 +178,27 @@ Core.Callback.Register('bcc-saloons:CheckIngredients', function(source, cb, id, 
         rowBrew = brewKey
     end
 
-    local canTake = true
-    local missingIng = nil
-    local normalized = funcs.NormalizeIngredients(ingredientTable)
+    local normalized = funcs.NormalizeIngredients(ingredientTable) or {}
+    local missing = {}
 
-    -- First pass: ensure player has all required ingredients
+    -- First pass: collect all missing ingredients (do not take any unless all are present)
     for _, ing in ipairs(normalized) do
         local itemName = ing.id
         local required = tonumber(ing.qty) or 0
         local okcount, itemCount = pcall(function() return exports.vorp_inventory:getItemCount(src, nil, itemName) end)
         if not okcount then itemCount = nil end
-        -- check ingredients
         if not itemCount or itemCount < required then
-            canTake = false
-            missingIng = { id = itemName, label = ing.label or itemName, required = required, have = itemCount or 0 }
-            break
+            table.insert(missing, { id = itemName, label = ing.label or itemName, required = required, have = itemCount or 0 })
         end
     end
 
-    if not canTake then
+    if #missing > 0 then
         if DBG then
-            DBG:Error('Player ' .. tostring(src) .. ' does not have required ingredients for brew ' .. tostring(rowBrew) .. ' stage ' .. tostring(rowStage))
+            DBG:Error('Player ' .. tostring(src) .. ' missing ingredients for brew ' .. tostring(rowBrew) .. ' stage ' .. tostring(rowStage))
         end
         Core.NotifyRightTip(src, locales.t('NoIngredients'), 4000)
-        if missingIng then
-            Core.NotifyRightTip(src, 'Missing: ' .. tostring(missingIng.label) .. ' x' .. tostring(missingIng.required - (missingIng.have or 0)), 5000)
+        for _, m in ipairs(missing) do
+            Core.NotifyRightTip(src, 'Missing: ' .. tostring(m.label) .. ' x' .. tostring(m.required - (m.have or 0)), 5000)
         end
         local tip = (Mash and Mash[rowBrew] and Mash[rowBrew][1] and Mash[rowBrew][1].Tip) or
             (Mash and Mash[rowBrew] and Mash[rowBrew].Tip) or
@@ -264,10 +260,32 @@ Core.Callback.Register('bcc-saloons:CheckIngredients', function(source, cb, id, 
     end
     if id then timers.StartPropTimer(id) end
 
+    -- If we computed an end_ms when starting brewing, also send a tick-synced event immediately
+    if end_ms then
+        local server_now_ms = math.floor(os.time() * 1000)
+        pcall(function()
+            TriggerClientEvent('bcc-saloons:StageEndTick', -1, id, end_ms, server_now_ms)
+        end)
+    end
+
     pcall(function() TriggerClientEvent('bcc-saloons:StartBrewingMash', src, nil, true, rowBrew) end)
 
     Core.NotifyRightTip(src, locales.t('TookIngredients'), 4000)
     cb(true)
+end)
+
+
+-- Return the player's item count for a given item (used by client UI)
+Core.Callback.Register('bcc-saloons:GetItemCount', function(source, cb, itemName)
+    local src = source
+    if not itemName then cb(nil) return end
+    local ok, count = pcall(function() return exports.vorp_inventory:getItemCount(src, nil, itemName) end)
+    if not ok then
+        if DBG then DBG:Warn('GetItemCount export failed for source ' .. tostring(src) .. ' item ' .. tostring(itemName)) end
+        cb(nil)
+        return
+    end
+    cb(tonumber(count) or 0)
 end)
 
 Core.Callback.Register('bcc-saloons:FinishBrewing', function(source, cb, id, brew, tbl)
