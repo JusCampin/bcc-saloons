@@ -57,23 +57,8 @@ function StartMainThread()
                 local nearbyBrewing = false
                 if isNearStill and nearestStillProp and tonumber(nearestStillProp.isbrewing) == 1 then nearbyBrewing = true end
                 if isNearBarrel and nearestBarrelProp and tonumber(nearestBarrelProp.isbrewing) == 1 then nearbyBrewing = true end
+                -- keep group label simple (no timer) — timer shown on prompt instead
                 local labelText = label
-                if nearbyBrewing then
-                    local nearestProp = nil
-                    if nearestStillProp and nearestBarrelProp then
-                        if nearestStillDist2 <= nearestBarrelDist2 then nearestProp = nearestStillProp else nearestProp = nearestBarrelProp end
-                    elseif nearestStillProp then nearestProp = nearestStillProp
-                    elseif nearestBarrelProp then nearestProp = nearestBarrelProp end
-                    if nearestProp and nearestProp.stage_end_ms and type(os) == 'table' and type(os.time) == 'function' then
-                        local remaining = tonumber(nearestProp.stage_end_ms) - (os.time() * 1000)
-                        if remaining < 0 then remaining = 0 end
-                        local totalSecs = math.ceil(remaining / 1000)
-                        local mins = math.floor(totalSecs / 60)
-                        local secs = totalSecs % 60
-                        local timeStr = string.format('%d:%02d', mins, secs)
-                        labelText = labelText .. ' | ' .. timeStr
-                    end
-                end
                 UiPromptSetActiveGroupThisFrame(BrewGroup, CreateVarString(10, 'LITERAL_STRING', labelText), 1, 0, 0, 0)
                 UiPromptSetVisible(BuildPrompt, false)
                 UiPromptSetVisible(DestroyPrompt, true)
@@ -82,26 +67,40 @@ function StartMainThread()
                 UiPromptSetVisible(BrewPrompt, true)
                 UiPromptSetEnabled(BrewPrompt, not nearbyBrewing)
                 -- Update BrewPrompt text to show countdown when nearby prop is brewing
-                local promptText = locales.t('BrewPrompt')
+                local promptText = locales.t('MashPrompt')
                 if nearbyBrewing then
                     -- choose closest prop between still/barrel
                     local nearestProp = nil
                     if nearestStillProp and nearestBarrelProp then
-                        if nearestStillDist2 <= nearestBarrelDist2 then nearestProp = nearestStillProp else nearestProp = nearestBarrelProp end
-                    elseif nearestStillProp then nearestProp = nearestStillProp
-                    elseif nearestBarrelProp then nearestProp = nearestBarrelProp end
-                    if nearestProp and type(os) == 'table' and type(os.time) == 'function' then
-                        if nearestProp.stage_end_ms then
+                        if nearestStillDist2 <= nearestBarrelDist2 then
+                            nearestProp = nearestStillProp
+                        else
+                            nearestProp = nearestBarrelProp
+                        end
+                    elseif nearestStillProp then
+                        nearestProp = nearestStillProp
+                    elseif nearestBarrelProp then
+                        nearestProp = nearestBarrelProp
+                    end
+
+                    if nearestProp then
+                        if nearestProp._endTick and type(GetGameTimer) == 'function' then
+                            local remaining_ms = math.max(0, nearestProp._endTick - GetGameTimer())
+                            local totalSecs = math.ceil(remaining_ms / 1000)
+                            local mins = math.floor(totalSecs / 60)
+                            local secs = totalSecs % 60
+                            local timeStr = string.format('%d:%02d', mins, secs)
+                            promptText = timeStr .. ' - ' .. locales.t('Mashing')
+                        elseif nearestProp.stage_end_ms and type(os) == 'table' and type(os.time) == 'function' then
                             local remaining = tonumber(nearestProp.stage_end_ms) - (os.time() * 1000)
                             if remaining < 0 then remaining = 0 end
                             local totalSecs = math.ceil(remaining / 1000)
                             local mins = math.floor(totalSecs / 60)
                             local secs = totalSecs % 60
                             local timeStr = string.format('%d:%02d', mins, secs)
-                            promptText = promptText .. ' - ' .. timeStr
+                            promptText = timeStr .. ' - ' .. locales.t('Mashing')
                         else
-                            -- show a brewing indicator when server hasn't provided exact end_ms yet
-                            promptText = promptText .. ' - ' .. locales.t('Brewing')
+                            promptText = locales.t('Mashing')
                         end
                     end
                 end
@@ -126,7 +125,8 @@ function StartMainThread()
                                 if v.propname == Config.props.still then
                                     OpenStillMenu(v.id, tonumber(v.stage) or 1, v.currentbrew)
                                 else
-                                    OpenMashMenu(v.id, tonumber(v.stage) or 1, v.currentbrew, tonumber(v.isbrewing) or 0, StageActionTarget and StageActionTarget.brew)
+                                    OpenMashMenu(v.id, tonumber(v.stage) or 1, v.currentbrew, tonumber(v.isbrewing) or 0,
+                                        StageActionTarget and StageActionTarget.brew)
                                 end
                                 openedForTarget = true
                                 StageActionTarget = nil
@@ -149,15 +149,17 @@ function StartMainThread()
                                 local now = GetGameTimer()
                                 if now - LastRemainingUpdate >= 1000 then
                                     LastRemainingUpdate = now
-                                    if v.stage_end_ms and tonumber(v.stage_end_ms) then
-                                        if type(os) == 'table' and type(os.time) == 'function' then
+                                    if (v._endTick and type(GetGameTimer) == 'function') or (v.stage_end_ms and type(os) == 'table' and type(os.time) == 'function') then
+                                        local secs = 0
+                                        if v._endTick and type(GetGameTimer) == 'function' then
+                                            local remaining_ms = math.max(0, v._endTick - GetGameTimer())
+                                            secs = math.ceil(remaining_ms / 1000)
+                                        else
                                             local remaining = tonumber(v.stage_end_ms) - (os.time() * 1000)
                                             if remaining < 0 then remaining = 0 end
-                                            local secs = math.ceil(remaining / 1000)
-                                            TipBottom(locales.t('BrewingTimer') .. ' ' .. tostring(secs) .. 's', 2000)
-                                        else
-                                            -- `os` not available in this environment; skip epoch-based timer display
+                                            secs = math.ceil(remaining / 1000)
                                         end
+                                        TipBottom(locales.t('BrewingTimer') .. ' ' .. tostring(secs) .. 's', 2000)
                                     end
                                 end
                             end
