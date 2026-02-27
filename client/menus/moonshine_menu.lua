@@ -53,12 +53,12 @@ function OpenStillMenu(id, stage, currentbrew)
 
     if Moonshine then
         for key, cfg in pairs(Moonshine) do
-            local disabled = (tonumber(stage) or 0) == 0 and false or ((tonumber(cfg.Locked) == 1) and true or false)
+            local disabled = (tonumber(stage) or 0) ~= 0 and tostring(currentbrew) ~= tostring(key)
             MainPage:RegisterElement('button', {
                 label = cfg.label or key,
                 slot = "content",
-                style = { ['color'] = '#E0E0E0' },
-                disabled = false
+                style = { ['color'] = disabled and '#666666' or '#E0E0E0' },
+                disabled = disabled
             }, function()
                 -- build detail page
                 local DetailPage = SaloonsStillMenu:RegisterPage('still:detail:' .. key)
@@ -87,7 +87,7 @@ function OpenStillMenu(id, stage, currentbrew)
                         style = {
                             ['font-size'] = '0.90vw',
                             ['font-variant'] = 'small-caps',
-                            ['color'] = '#D0D0D0'
+                            ['color'] = '#F5F5DC'
                         }
                     })
 
@@ -136,7 +136,8 @@ function OpenStillMenu(id, stage, currentbrew)
                     slot = "content",
                     style = { ['color'] = '#E0E0E0' }
                 }, function()
-                            funcs.CallServerAsync('bcc-saloons:CheckIngredients', id, nil, key)
+                    SaloonsStillMenu:Close()
+                    funcs.CallServerAsync('bcc-saloons:CheckIngredients', id, nil, key)
                 end)
 
                 -- Continue/Collect depending on current stage
@@ -148,6 +149,7 @@ function OpenStillMenu(id, stage, currentbrew)
                             slot = "content",
                             style = { ['color'] = '#E0E0E0' }
                         }, function()
+                            SaloonsStillMenu:Close()
                             funcs.CallServerAsync('bcc-saloons:CheckIngredients', id, curStage, key)
                         end)
                     else
@@ -156,6 +158,7 @@ function OpenStillMenu(id, stage, currentbrew)
                             slot = "content",
                             style = { ['color'] = '#E0E0E0' }
                         }, function()
+                            SaloonsStillMenu:Close()
                             funcs.CallServerAsync('bcc-saloons:FinishBrewing', id, key)
                         end)
                     end
@@ -168,6 +171,7 @@ function OpenStillMenu(id, stage, currentbrew)
                         slot = "content",
                         style = { ['color'] = '#FF6666' }
                     }, function()
+                        SaloonsStillMenu:Close()
                         funcs.CallServerAsync('bcc-saloons:ResetMash', id)
                     end)
                 end
