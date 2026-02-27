@@ -67,7 +67,7 @@ function M.LoadModel(model, modelName)
     end
 end
 
-function M.PlayAnim(animDict, animName, time,loopUntilTimeOver)
+function M.PlayAnim(animDict, animName, time,loopUntilTimeOver, flag)
     -- Validate inputs
     if not animDict or not animName then
         DBG:Error('Invalid animation dictionary or name for PlayAnim: ' .. tostring(animDict) .. ', ' .. tostring(animName))
@@ -98,10 +98,12 @@ function M.PlayAnim(animDict, animName, time,loopUntilTimeOver)
     local animTime = time
 
     -- Set animation flags
-    local flag = 16 -- Default flag for one-time playback
-    if loopUntilTimeOver then
-        flag = 1    -- Flag for looping
-        animTime = -1
+    if not flag then
+        flag = 16 -- Default flag for one-time playback
+        if loopUntilTimeOver then
+            flag = 1    -- Flag for looping
+            animTime = -1
+        end
     end
 
     -- Play animation
