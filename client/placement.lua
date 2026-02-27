@@ -16,12 +16,12 @@ local function savePlacedProp(propName, object, propCoords, propHeading, network
     elseif propName == Config.props.barrel then
         placingMsg = locales.t('PlacingBarrel')
     end
-    TipBottom(placingMsg, (Config.timeToConstruct * 1000) or 10000)
+    TipBottom(placingMsg, (Config.timeToConstruct or 10) * 1000)
     local pedIsMale = IsPedMale(PlayerPedId())
     local animDict = pedIsMale and 'amb_work@world_human_crouch_inspect@male_c@idle_d' or 'amb_work@world_human_crouch_inspect@female_a@idle_a'
     local animName = pedIsMale and 'idle_k' or 'idle_a'
-    local time = (Config.timeToConstruct * 1000) or 10000
-    funcs.PlayAnim(animDict, animName, time, true)
+    local time = (Config.timeToConstruct or 10) * 1000
+    funcs.PlayAnim(animDict, animName, time, true, nil)
 
     local placedMsg = (propName == Config.props.still) and locales.t('StillPlaced') or locales.t('BarrelPlaced')
     Core.NotifyRightTip(placedMsg, 4000)
