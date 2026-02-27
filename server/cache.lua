@@ -34,11 +34,7 @@ local function LoadStillsCache()
         if DBG then DBG:Error('LoadStillsCache MySQL error: ' .. tostring(result)) end
         return false
     end
-    if DBG then
-        local count = 0
-        if type(result) == 'table' then count = #result end
-        DBG:Info('LoadStillsCache returned ' .. tostring(count) .. ' rows')
-    end
+
     if result and result[1] then
         -- clear existing cache table while preserving reference
         for i = #StillsCache, 1, -1 do table.remove(StillsCache, i) end
