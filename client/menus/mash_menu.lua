@@ -31,15 +31,15 @@ local SaloonsMashMenu = FeatherMenu:RegisterMenu('saloons:mash:menu', {
     closed = function()
         DisplayRadar(true)
         InMenu = false
-        -- preserve kneel animation if requested (set by action click)
         if not KeepKneeling then
             ClearPedTasks(PlayerPedId())
         end
     end
 })
 
-RegisterNetEvent('bcc-saloons:ClearKeepKneeling', function()
+AddEventHandler('bcc-saloons:ClearKeepKneeling', function()
     KeepKneeling = false
+    pcall(function() ClearPedTasks(PlayerPedId()) end)
 end)
 
 local headerStyle = { ['color'] = '#999' }
@@ -75,7 +75,7 @@ local function getLocalItemCount(itemName)
     return nil
 end
 
-RegisterNetEvent('bcc-saloons:CloseMashMenu', function()
+AddEventHandler('bcc-saloons:CloseMashMenu', function()
     pcall(function() SaloonsMashMenu:Close() end)
 end)
 
@@ -85,17 +85,17 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
 
     MainPage:RegisterElement('header', {
         value = locales.t('MashHeader'),
-        slot = "header",
+        slot = 'header',
         style = headerStyle
     })
 
     MainPage:RegisterElement('subheader', {
         value = locales.t('MashSubheader'),
-        slot = "header",
+        slot = 'header',
         style = subheaderStyle
     })
 
-    MainPage:RegisterElement('line', { slot = "header", style = {} })
+    MainPage:RegisterElement('line', { slot = 'header', style = {} })
 
     local function BuildAndOpenDetail(item, propId, propStage, propCurrentBrew, propIsBrewing)
         local itemCfg = Mash[item]
@@ -110,32 +110,31 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
             if not DBG then print('BuildAndOpenDetail: item disabled for this prop: ' .. itemStr) end
             return
         end
+
         local DetailPage = SaloonsMashMenu:RegisterPage('detail:page:' .. item)
 
         DetailPage:RegisterElement('header', {
             value = locales.t('MashHeader'),
-            slot = "header",
+            slot = 'header',
             style = headerStyle
         })
 
         DetailPage:RegisterElement('subheader', {
             value = itemCfg.label,
-            slot = "header",
+            slot = 'header',
             style = subheaderStyle
         })
 
-        addText(DetailPage, locales.t('Produces') .. ' ' .. tostring(itemCfg.yield or 1) .. ' ' .. locales.t('Buckets'),
-            'header', smallTextStyle)
+        addText(DetailPage, locales.t('Produces') .. ' ' .. tostring(itemCfg.yield or 1) .. ' ' .. locales.t('Buckets'), 'header', smallTextStyle)
 
-        DetailPage:RegisterElement('line', { slot = "header", style = {} })
+        DetailPage:RegisterElement('line', { slot = 'header', style = {} })
 
         local last = itemCfg.lastStage or 1
         for si = 1, last do
             local scfg = (itemCfg[si] or {})
             local stime = scfg.fermentTime or ''
             local ingr = scfg.ingredients or {}
-            addText(DetailPage, 'Stage ' .. tostring(si) .. ' - Time: ' .. tostring(stime) .. ' min', 'content',
-                medTextStyle)
+            addText(DetailPage, 'Stage ' .. tostring(si) .. ' - Time: ' .. tostring(stime) .. ' min', 'content', medTextStyle)
             if ingr and type(ingr) == 'table' and #ingr > 0 then
                 addText(DetailPage, '  Ingredients:', 'content', smallTextStyle)
                 for _, ing in ipairs(ingr) do
@@ -144,8 +143,11 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
                     local itemLabel = (ing.label or ing.id) .. ' x' .. tostring(qty)
                     local style = smallTextStyle
                     if have ~= nil and have < qty then
-                        style = { ['font-size'] = smallTextStyle['font-size'], ['font-variant'] = smallTextStyle
-                        ['font-variant'], ['color'] = '#FF6666' }
+                        style = {
+                            ['font-size'] = smallTextStyle['font-size'],
+                            ['font-variant'] = smallTextStyle['font-variant'],
+                            ['color'] = '#FF6666'
+                        }
                     end
                     addText(DetailPage, '    - ' .. itemLabel, 'content', style)
                 end
@@ -154,7 +156,7 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
 
         DetailPage:RegisterElement('bottomline', { slot = 'footer', style = {} })
 
-        DetailPage:RegisterElement('line', { slot = "footer", style = {} })
+        DetailPage:RegisterElement('line', { slot = 'footer', style = {} })
 
         -- Dynamic action button: Start / Continue / Collect
         do
@@ -187,7 +189,7 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
 
             DetailPage:RegisterElement('button', {
                 label = actionLabel,
-                slot = "footer",
+                slot = 'footer',
                 style = disabled and disabledButton or activeButton,
                 disabled = disabled
             }, function()
@@ -201,7 +203,6 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
 
         -- Reset mash / destroy option when brewing
         local showDestroy = false
-        if tonumber(propIsBrewing) == 1 then showDestroy = true end
         if propStage and tonumber(propStage) and tonumber(propStage) >= 2 then showDestroy = true end
         if showDestroy then
             addButton(DetailPage, locales.t('DestroyMash'), 'footer', { ['color'] = '#FF6666' }, function()
@@ -221,9 +222,8 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
             end)
         end
 
-        DetailPage:RegisterElement('line', { slot = "footer", style = {} })
-
-        -- open the detail page we just built
+        DetailPage:RegisterElement('line', { slot = 'footer', style = {} })
+        -- open the detail page
         pcall(function() SaloonsMashMenu:Open({ startupPage = DetailPage }) end)
     end
 
@@ -232,28 +232,28 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
         -- Button opens a detail page for this mash
         MainPage:RegisterElement('button', {
             label = itemCfg.label,
-            slot = "content",
+            slot = 'content',
             style = disabled and disabledButton or activeButton,
             disabled = disabled
         }, function()
             if disabled then return end
-            local clickMsg = 'Mash button clicked: item=' ..
-                tostring(item) ..
-                ' id=' ..
-                tostring(id) ..
-                ' stage=' ..
-                tostring(stage) ..
-                ' currentbrew=' ..
-                tostring(currentbrew) .. ' isbrewing=' .. tostring(isbrewing) .. ' disabled=' .. tostring(disabled)
+
+            local clickMsg = 'Mash button clicked: item=' .. tostring(item) ..
+                ' id=' .. tostring(id) ..
+                ' stage=' .. tostring(stage) ..
+                ' currentbrew=' .. tostring(currentbrew) ..
+                ' isbrewing=' .. tostring(isbrewing) ..
+                ' disabled=' .. tostring(disabled)
             if not Mash or not Mash[item] then
                 if DBG then
-                    DBG:Warn('BuildAndOpenDetail: missing Mash config for ' ..
-                        tostring(item) .. ' -- ' .. clickMsg)
+                    DBG:Warn('BuildAndOpenDetail: missing Mash config for ' .. tostring(item) .. ' -- ' .. clickMsg)
                 end
                 if not DBG then print('BuildAndOpenDetail: missing Mash config for ' .. tostring(item)) end
                 return
             end
+
             if DBG then DBG:Info(clickMsg) else print(clickMsg) end
+
             local ok, err = pcall(function() BuildAndOpenDetail(item, id, stage, currentbrew, isbrewing) end)
             if not ok then
                 if DBG then DBG:Error('BuildAndOpenDetail failed: ' .. tostring(err)) end
@@ -264,18 +264,18 @@ function OpenMashMenu(id, stage, currentbrew, isbrewing, startupItem)
 
     MainPage:RegisterElement('bottomline', { slot = 'footer', style = {} })
 
-    MainPage:RegisterElement('line', { slot = "footer", style = {} })
+    MainPage:RegisterElement('line', { slot = 'footer', style = {} })
 
     -- Main page Close button
     MainPage:RegisterElement('button', {
         label = locales.t('Close'),
-        slot = "footer",
+        slot = 'footer',
         style = activeButton
     }, function()
         SaloonsMashMenu:Close()
     end)
 
-    MainPage:RegisterElement('line', { slot = "footer", style = {} })
+    MainPage:RegisterElement('line', { slot = 'footer', style = {} })
 
     -- If a startupItem was provided, try to open its detail page directly
     if startupItem then
