@@ -6,8 +6,6 @@ local function load_module(path)
     if not fn then error(err) end
     return fn()
 end
-
--- Prefer shared instances (set by launcher) to avoid duplicate module state
 local cache = _G['bcc_saloons_cache'] or load_module('server/cache.lua')
 _G['bcc_saloons_cache'] = cache
 local timers = _G['bcc_saloons_timers'] or load_module('server/timers.lua')
@@ -179,50 +177,84 @@ Core.Callback.Register('bcc-saloons:CheckIngredients', function(source, cb, id, 
     end
 
     local normalized = funcs.NormalizeIngredients(ingredientTable) or {}
-    local missing = {}
 
-    -- First pass: collect all missing ingredients (do not take any unless all are present)
-    for _, ing in ipairs(normalized) do
-        local itemName = ing.id
-        local required = tonumber(ing.qty) or 0
-        local okcount, itemCount = pcall(function() return exports.vorp_inventory:getItemCount(src, nil, itemName) end)
-        if not okcount then itemCount = nil end
-        if not itemCount or itemCount < required then
-            table.insert(missing, { id = itemName, label = ing.label or itemName, required = required, have = itemCount or 0 })
-        end
-    end
+    -- Take a snapshot of the player's inventory (single call) to build counts map
+    pcall(function()
+        exports.vorp_inventory:getUserInventoryItems(src, function(items)
+            local counts = {}
+            for _, it in ipairs(items or {}) do
+                local iname = it.name or it.item or it.id
+                local qty = tonumber(it.count or it.qty or it.amount or it.quantity) or 1
+                if iname then counts[tostring(iname)] = (counts[tostring(iname)] or 0) + qty end
+            end
 
-    if #missing > 0 then
-        if DBG then
-            DBG:Error('Player ' .. tostring(src) .. ' missing ingredients for brew ' .. tostring(rowBrew) .. ' stage ' .. tostring(rowStage))
-        end
-        Core.NotifyRightTip(src, locales.t('NoIngredients'), 4000)
-        for _, m in ipairs(missing) do
-            Core.NotifyRightTip(src, 'Missing: ' .. tostring(m.label) .. ' x' .. tostring(m.required - (m.have or 0)), 5000)
-        end
-        local tip = (Mash and Mash[rowBrew] and Mash[rowBrew][1] and Mash[rowBrew][1].Tip) or
-            (Mash and Mash[rowBrew] and Mash[rowBrew].Tip) or
-            (Moonshine and Moonshine[rowBrew] and Moonshine[rowBrew].Tip)
-        if tip then Core.NotifyRightTip(src, tip, 4000) end
-        cb(false)
-        return
-    end
+            -- check against snapshot
+            local missing = {}
+            for _, ing in ipairs(normalized) do
+                local itemName = tostring(ing.id)
+                local required = tonumber(ing.qty) or 0
+                local have = counts[itemName] or 0
+                if have < required then
+                    table.insert(missing, { id = itemName, label = ing.label or itemName, required = required, have = have })
+                end
+            end
 
-    -- Remove items now that we've confirmed availability
-    for _, ing in ipairs(normalized) do
-        local itemName = ing.id
-        local required = tonumber(ing.qty) or 0
-        pcall(function() exports.vorp_inventory:subItem(src, itemName, required) end)
-    end
+            if #missing > 0 then
+                if DBG then
+                    DBG:Error('Player ' .. tostring(src) .. ' missing ingredients for brew ' .. tostring(rowBrew) .. ' stage ' .. tostring(rowStage))
+                end
+                Core.NotifyRightTip(src, locales.t('NoIngredients'), 4000)
+                for _, m in ipairs(missing) do
+                    Core.NotifyRightTip(src, 'Missing: ' .. tostring(m.label) .. ' x' .. tostring(m.required - (m.have or 0)), 5000)
+                end
+                local tip = (Mash and Mash[rowBrew] and Mash[rowBrew][1] and Mash[rowBrew][1].Tip) or
+                    (Mash and Mash[rowBrew] and Mash[rowBrew].Tip) or
+                    (Moonshine and Moonshine[rowBrew] and Moonshine[rowBrew].Tip)
+                if tip then Core.NotifyRightTip(src, tip, 4000) end
+                cb(false)
+                return
+            end
 
-    -- Compute wait time and persist brewing start
-    local now_ms = math.floor(os.time() * 1000)
-    local wait_ms = 0
-    if rowStage ~= nil then
-        local nextStage = tonumber(rowStage) + 1
+            -- Re-check availability immediately before removing to avoid race conditions
+            for _, ing in ipairs(normalized) do
+                local itemName = ing.id
+                local required = tonumber(ing.qty) or 0
+                local okcount, itemCount = pcall(function() return exports.vorp_inventory:getItemCount(src, nil, itemName) end)
+                if not okcount or not itemCount or itemCount < required then
+                    if DBG then DBG:Error('Player ' .. tostring(src) .. ' lost ingredients before removal for brew ' .. tostring(rowBrew) .. ' stage ' .. tostring(rowStage)) end
+                    Core.NotifyRightTip(src, locales.t('NoIngredients'), 4000)
+                    Core.NotifyRightTip(src, 'Missing: ' .. tostring(ing.label or itemName) .. ' x' .. tostring(required - (itemCount or 0)), 5000)
+                    cb(false)
+                    return
+                end
+            end
+
+            -- Remove items now that we've confirmed availability
+            for _, ing in ipairs(normalized) do
+                local itemName = ing.id
+                local required = tonumber(ing.qty) or 0
+                pcall(function() exports.vorp_inventory:subItem(src, itemName, required) end)
+            end
+
+            -- Compute wait time and persist brewing start
+            local now_ms = math.floor(os.time() * 1000)
+            local wait_ms = 0
+            if rowStage ~= nil then
+                local nextStage = tonumber(rowStage) + 1
+                        if Mash and Mash[rowBrew] then
+                            if Mash[rowBrew][nextStage] then
+                                local mf = Mash[rowBrew][nextStage].fermenttime or Mash[rowBrew][nextStage].fermentTime
+                                if mf then wait_ms = mf * 60000 end
+                            end
+                            if not wait_ms then
+                                local mf = Mash[rowBrew].fermenttime or Mash[rowBrew].fermentTime
+                                if mf then wait_ms = mf * 60000 end
+                            end
+                        end
+            else
                 if Mash and Mash[rowBrew] then
-                    if Mash[rowBrew][nextStage] then
-                        local mf = Mash[rowBrew][nextStage].fermenttime or Mash[rowBrew][nextStage].fermentTime
+                    if Mash[rowBrew][2] then
+                        local mf = Mash[rowBrew][2].fermenttime or Mash[rowBrew][2].fermentTime
                         if mf then wait_ms = mf * 60000 end
                     end
                     if not wait_ms then
@@ -230,50 +262,40 @@ Core.Callback.Register('bcc-saloons:CheckIngredients', function(source, cb, id, 
                         if mf then wait_ms = mf * 60000 end
                     end
                 end
-    else
-        if Mash and Mash[rowBrew] then
-            if Mash[rowBrew][2] then
-                local mf = Mash[rowBrew][2].fermenttime or Mash[rowBrew][2].fermentTime
-                if mf then wait_ms = mf * 60000 end
             end
-            if not wait_ms then
-                local mf = Mash[rowBrew].fermenttime or Mash[rowBrew].fermentTime
-                if mf then wait_ms = mf * 60000 end
+            -- computed wait_ms
+            local end_ms = nil
+            if wait_ms > 0 then end_ms = now_ms + wait_ms end
+            local oku, _ = funcs.SafeMySQLQuery(
+                "UPDATE brewing SET isbrewing = ?, currentbrew = ?, started_at_ms = ?, stage_end_ms = ?, started_by = ? WHERE id = ?",
+                { 1, rowBrew, now_ms, end_ms, starter_id, id })
+            -- DB updated for brewing start
+            if oku then
+                local okr, updated = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
+                if okr and updated and updated[1] then
+                    cache.UpsertCacheRow(updated[1])
+                    pcall(function()
+                        TriggerClientEvent('bcc-saloons:SendPropsFromWorld', -1, funcs.ShallowCopyList(updated))
+                    end)
+                end
             end
-        end
-    end
-    -- computed wait_ms
-    local end_ms = nil
-    if wait_ms > 0 then end_ms = now_ms + wait_ms end
-    local oku, _ = funcs.SafeMySQLQuery(
-        "UPDATE brewing SET isbrewing = ?, currentbrew = ?, started_at_ms = ?, stage_end_ms = ?, started_by = ? WHERE id = ?",
-        { 1, rowBrew, now_ms, end_ms, starter_id, id })
-    -- DB updated for brewing start
-    if oku then
-        local okr, updated = funcs.SafeMySQLQuery("SELECT * FROM brewing WHERE id = ?", { id })
-        if okr and updated and updated[1] then
-            cache.UpsertCacheRow(updated[1])
-            pcall(function()
-                TriggerClientEvent('bcc-saloons:SendPropsFromWorld', -1, funcs.ShallowCopyList(updated))
-            end)
-        end
-    end
-    if id then timers.StartPropTimer(id) end
+            if id then timers.StartPropTimer(id) end
 
-    -- If we computed an end_ms when starting brewing, also send a tick-synced event immediately
-    if end_ms then
-        local server_now_ms = math.floor(os.time() * 1000)
-        pcall(function()
-            TriggerClientEvent('bcc-saloons:StageEndTick', -1, id, end_ms, server_now_ms)
+            -- If we computed an end_ms when starting brewing, also send a tick-synced event immediately
+            if end_ms then
+                local server_now_ms = math.floor(os.time() * 1000)
+                pcall(function()
+                    TriggerClientEvent('bcc-saloons:StageEndTick', -1, id, end_ms, server_now_ms)
+                end)
+            end
+
+            pcall(function() TriggerClientEvent('bcc-saloons:StartBrewingMash', src, nil, true, rowBrew) end)
+
+            Core.NotifyRightTip(src, locales.t('TookIngredients'), 4000)
+            cb(true)
         end)
-    end
-
-    pcall(function() TriggerClientEvent('bcc-saloons:StartBrewingMash', src, nil, true, rowBrew) end)
-
-    Core.NotifyRightTip(src, locales.t('TookIngredients'), 4000)
-    cb(true)
+    end)
 end)
-
 
 -- Return the player's item count for a given item (used by client UI)
 Core.Callback.Register('bcc-saloons:GetItemCount', function(source, cb, itemName)
